@@ -19,7 +19,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-rag_engine = RAGEngine()
+# Lazy initialization of RAG engine on first use
+_rag_engine = None
+
+def get_rag_engine():
+    global _rag_engine
+    if _rag_engine is None:
+        logger.info("Initializing RAG Engine...")
+        _rag_engine = RAGEngine()
+    return _rag_engine
 
 class QueryRequest(BaseModel):
     user_id: str
@@ -37,6 +45,7 @@ async def root():
 async def query_rag(request: QueryRequest):
     logger.info(f"Received query from {request.user_id}: {request.query}")
     try:
+        rag_engine = get_rag_engine()
         result = rag_engine.generate_answer(request.query)
         return QueryResponse(
             answer=result["answer"],

@@ -18,11 +18,28 @@ class VectorStoreService:
             logger.warning("MONGODB_URI not found in environment variables.")
             
         self.embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
-        self.client = MongoClient(self.mongodb_uri)
-        self.collection = self.client[self.db_name][self.collection_name]
+        self.client = None
+        self.collection = None
+        self._connected = False
+
+    def _ensure_connected(self):
+        """Lazy connect to MongoDB on first use."""
+        if self._connected:
+            return
+        try:
+            if not self.client:
+                self.client = MongoClient(self.mongodb_uri, serverSelectionTimeoutMS=5000)
+                self.collection = self.client[self.db_name][self.collection_name]
+            self._connected = True
+            logger.info("Connected to MongoDB Atlas.")
+        except Exception as e:
+            logger.error(f"Failed to connect to MongoDB: {e}")
+            self._connected = False
+            raise
 
     def get_vector_store(self):
         """Returns the configured MongoDB Atlas Vector Search instance."""
+        self._ensure_connected()
         return MongoDBAtlasVectorSearch(
             collection=self.collection,
             embedding=self.embeddings,
@@ -32,13 +49,20 @@ class VectorStoreService:
     def add_documents(self, documents):
         """Adds documents to the vector store."""
         logger.info(f"Adding {len(documents)} documents to MongoDB Atlas...")
-        vector_store = self.get_vector_store()
-        vector_store.add_documents(documents)
-        logger.info("Documents successfully added.")
+        try:
+            vector_store = self.get_vector_store()
+            vector_store.add_documents(documents)
+            logger.info("Documents successfully added.")
+        except Exception as e:
+            logger.error(f"Error adding documents: {e}")
 
     def similarity_search(self, query: str, k: int = 5):
         """Performs a similarity search for a given query."""
         logger.info(f"Searching for: {query}")
-        vector_store = self.get_vector_store()
-        results = vector_store.similarity_search(query, k=k)
-        return results
+        try:
+            vector_store = self.get_vector_store()
+            results = vector_store.similarity_search(query, k=k)
+            return results
+        except Exception as e:
+            logger.error(f"Error during similarity search: {e}")
+            return []
